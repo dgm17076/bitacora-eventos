@@ -1,0 +1,65 @@
+.form-card {
+  max-width: 700px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.sev-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sev-opt {
+  padding: 8px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.sev-opt:hover {
+  border-color: var(--sev-color);
+  color: var(--sev-color);
+}
+
+.sev-opt.selected {
+  background: rgba(var(--sev-color-raw, 0,212,255), 0.08);
+  border-color: var(--sev-color);
+  color: var(--sev-color);
+  box-shadow: 0 0 12px rgba(0,0,0,0.3);
+}
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--accent-red-dim);
+  border: 1px solid rgba(255,64,96,0.3);
+  color: var(--accent-red);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}

@@ -1,0 +1,132 @@
+:root {
+  --bg-void: #050608;
+  --bg-deep: #0a0c0f;
+  --bg-surface: #0f1215;
+  --bg-elevated: #161b21;
+  --bg-card: #1a2029;
+
+  --border-subtle: #1e2730;
+  --border-mid: #2a3540;
+  --border-bright: #3d5068;
+
+  --text-primary: #e8edf2;
+  --text-secondary: #8a9bb0;
+  --text-muted: #4a5a6a;
+  --text-dim: #2a3545;
+
+  --accent-cyan: #00d4ff;
+  --accent-cyan-dim: #004455;
+  --accent-green: #00ff88;
+  --accent-green-dim: #003322;
+  --accent-amber: #ffb340;
+  --accent-amber-dim: #442800;
+  --accent-red: #ff4060;
+  --accent-red-dim: #440010;
+  --accent-violet: #a855f7;
+
+  --severity-info: #00d4ff;
+  --severity-warning: #ffb340;
+  --severity-error: #ff4060;
+  --severity-critical: #a855f7;
+
+  --font-display: 'Syne', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --glow-cyan: 0 0 20px rgba(0, 212, 255, 0.15);
+  --glow-red: 0 0 20px rgba(255, 64, 96, 0.2);
+  --glow-amber: 0 0 20px rgba(255, 179, 64, 0.15);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-mono);
+  background-color: var(--bg-void);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,212,255,0.04) 0%, transparent 60%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 40px,
+      rgba(255,255,255,0.015) 40px,
+      rgba(255,255,255,0.015) 41px
+    );
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-bright); }
+
+/* Selection */
+::selection { background: rgba(0,212,255,0.2); color: var(--text-primary); }
+
+/* Global transitions */
+button, a, input, select, textarea {
+  transition: all 0.15s ease;
+}
+
+input, select, textarea {
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  width: 100%;
+  outline: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(0,212,255,0.1);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+
+button {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.animate-in {
+  animation: fadeIn 0.3s ease forwards;
+}
