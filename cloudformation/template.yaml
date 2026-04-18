@@ -1,243 +1,167 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Infraestructura para Bitácora de Eventos — DevOps Project
-  Crea: VPC, Security Group, EC2 (t2.micro), S3 Bucket
+  Infraestructura para el Sistema de Bitácora de Eventos.
+  Crea una instancia EC2 para correr la aplicación con Docker
+  y un bucket S3 para almacenar los logs generados.
 
-# ─── Parámetros ───────────────────────────────────────────────────────────────
 Parameters:
-  KeyPairName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Description: Nombre del Key Pair de EC2 para acceso SSH
 
-  InstanceType:
+  NombreProyecto:
+    Type: String
+    Default: bitacora-eventos
+    Description: Nombre base del proyecto
+
+  TipoInstancia:
     Type: String
     Default: t2.micro
-    AllowedValues: [t2.micro, t2.small, t2.medium]
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
     Description: Tipo de instancia EC2
 
-  YourIP:
+  AMIId:
     Type: String
-    Default: "0.0.0.0/0"
-    Description: >
-      Tu IP pública para acceso SSH (recomendado: usar tu IP /32 en producción).
-      Ejemplo: 203.0.113.50/32
+    Default: ami-0c02fb55956c7d316
+    Description: AMI de Amazon Linux 2 (us-east-1)
 
-# ─── Mappings ─────────────────────────────────────────────────────────────────
-Mappings:
-  RegionAMI:
-    us-east-1:
-      AMI: ami-0c02fb55956c7d316   # Amazon Linux 2
-    us-west-2:
-      AMI: ami-0ceecbb0f30a902a6
-    us-east-2:
-      AMI: ami-0b0af3577fe5e3532
-    sa-east-1:
-      AMI: ami-0f8e81a3da6e2510a   # São Paulo (más cercano a MX)
+  PuertoFrontend:
+    Type: Number
+    Default: 5173
+    Description: Puerto del frontend
 
-# ─── Recursos ─────────────────────────────────────────────────────────────────
+  PuertoBackend:
+    Type: Number
+    Default: 3000
+    Description: Puerto del backend
+
 Resources:
 
-  # ── S3 Bucket para logs y archivos estáticos ───────────────────────────────
+  # ---------------------------------------------------------------------------
+  # SECURITY GROUP
+  #
+  # NOTA IMPORTANTE: Este SG usa 0.0.0.0/0 solo para desarrollo/pruebas.
+  # En PRODUCCION se deben aplicar estas restricciones:
+  #
+  # - SSH (22): Usar solo tu IP especifica (X.X.X.X/32), nunca 0.0.0.0/0
+  # - Backend (3000): No exponer a internet. Solo acceso interno desde el SG.
+  # - Base de datos (3306/27017): NUNCA exponer. Solo acceso local en Docker.
+  # - Frontend (5173): En produccion usar puerto 443 con HTTPS y Load Balancer.
+  # - Usar 0.0.0.0/0 en produccion es un riesgo de seguridad critico.
+  # ---------------------------------------------------------------------------
+
+  BitacoraSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${NombreProyecto}-sg'
+      GroupDescription: SG para Bitacora de Eventos - solo desarrollo
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH (restringir en produccion)
+        - IpProtocol: tcp
+          FromPort: !Ref PuertoFrontend
+          ToPort: !Ref PuertoFrontend
+          CidrIp: 0.0.0.0/0
+          Description: Frontend React/Vite
+        - IpProtocol: tcp
+          FromPort: !Ref PuertoBackend
+          ToPort: !Ref PuertoBackend
+          CidrIp: 0.0.0.0/0
+          Description: Backend API (restringir en produccion)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+      Tags:
+        - Key: Name
+          Value: !Sub '${NombreProyecto}-sg'
+
+  # ---------------------------------------------------------------------------
+  # INSTANCIA EC2
+  # ---------------------------------------------------------------------------
+
+  BitacoraEC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref TipoInstancia
+      ImageId: !Ref AMIId
+      SecurityGroups:
+        - !Ref BitacoraSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${NombreProyecto}-server'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y git
+          amazon-linux-extras install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          chkconfig docker on
+          curl -Lo /usr/local/bin/docker-compose \
+            https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64
+          chmod +x /usr/local/bin/docker-compose
+          cd /home/ec2-user
+          git clone https://github.com/dgm17076/bitacora-eventos.git
+          cd bitacora-eventos
+          chmod +x deploy.sh start_app.sh stop_app.sh
+          ./deploy.sh
+          (crontab -l 2>/dev/null; echo "0 8 * * * /home/ec2-user/bitacora-eventos/start_app.sh") | crontab -
+          (crontab -l 2>/dev/null; echo "0 22 * * * /home/ec2-user/bitacora-eventos/stop_app.sh") | crontab -
+
+  BitacoraEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref BitacoraEC2
+      Tags:
+        - Key: Name
+          Value: !Sub '${NombreProyecto}-eip'
+
+  # ---------------------------------------------------------------------------
+  # BUCKET S3 — logs de la aplicacion
+  # ---------------------------------------------------------------------------
+
   BitacoraLogsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "bitacora-logs-${AWS::AccountId}-${AWS::Region}"
-      # Versionado para backup de logs
-      VersioningConfiguration:
-        Status: Enabled
-      # Lifecycle: mover logs a Glacier después de 90 días
-      LifecycleConfiguration:
-        Rules:
-          - Id: ArchiveOldLogs
-            Status: Enabled
-            Transitions:
-              - TransitionInDays: 90
-                StorageClass: GLACIER
-            ExpirationInDays: 365
-      # Bloquear acceso público (logs son privados)
+      BucketName: !Sub '${NombreProyecto}-logs-${AWS::AccountId}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      Tags:
-        - Key: Project
-          Value: BitacoraEventos
-        - Key: Environment
-          Value: Production
-
-  # ── Security Group ─────────────────────────────────────────────────────────
-  #
-  # CONFIGURACIÓN DE SECURITY GROUPS — IMPORTANTE
-  # ─────────────────────────────────────────────────────────────────────────────
-  # PUERTOS REQUERIDOS por la aplicación:
-  #   • Puerto 80   → Frontend (nginx en contenedor)
-  #   • Puerto 3001 → Backend API (Express)
-  #   • Puerto 22   → SSH para administración
-  #
-  # ADVERTENCIA SOBRE 0.0.0.0/0:
-  #   • Se usa aquí solo para facilitar la evaluación del proyecto.
-  #   • EN PRODUCCIÓN REAL nunca se recomienda 0.0.0.0/0 porque:
-  #       - Expone el servicio a todo internet (ataques de fuerza bruta, scanners)
-  #       - Violación de principio de mínimo privilegio
-  #       - Para SSH: usar solo tu IP /32 o una VPN
-  #       - Para la app: poner un ALB (Application Load Balancer) o CloudFront
-  #         frente al EC2, y restringir EC2 solo a tráfico del LB
-  #   • Puertos adicionales que podrían necesitarse:
-  #       - 5173: Vite dev server (solo desarrollo local, NO exponer en EC2)
-  #       - 8080: alternativa a 80 si no se usa nginx
-  #       - 27017: MongoDB — NUNCA exponer públicamente
-  # ─────────────────────────────────────────────────────────────────────────────
-  BitacoraSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: bitacora-sg
-      GroupDescription: Security group para Bitacora de Eventos
-      SecurityGroupIngress:
-        # SSH — idealmente restringir a tu IP: !Sub "${YourIP}"
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref YourIP
-          Description: SSH access
-        # HTTP Frontend
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-          Description: Frontend HTTP
-        # Backend API
-        - IpProtocol: tcp
-          FromPort: 3001
-          ToPort: 3001
-          CidrIp: 0.0.0.0/0
-          Description: Backend API
-        # HTTPS (para futuro)
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: 0.0.0.0/0
-          Description: HTTPS
-      SecurityGroupEgress:
-        - IpProtocol: "-1"
-          CidrIp: 0.0.0.0/0
-          Description: All outbound traffic
+      LifecycleConfiguration:
+        Rules:
+          - Id: EliminarLogsAntiguos
+            Status: Enabled
+            ExpirationInDays: 90
       Tags:
         - Key: Name
-          Value: bitacora-sg
-        - Key: Project
-          Value: BitacoraEventos
+          Value: !Sub '${NombreProyecto}-logs'
 
-  # ── IAM Role para EC2 (acceso a S3) ───────────────────────────────────────
-  BitacoraEC2Role:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: BitacoraEC2Role
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: S3LogsAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:ListBucket
-                Resource:
-                  - !GetAtt BitacoraLogsBucket.Arn
-                  - !Sub "${BitacoraLogsBucket.Arn}/*"
-
-  BitacoraInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles: [!Ref BitacoraEC2Role]
-
-  # ── EC2 Instance ───────────────────────────────────────────────────────────
-  BitacoraEC2Instance:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyPairName
-      ImageId: !FindInMap [RegionAMI, !Ref "AWS::Region", AMI]
-      IamInstanceProfile: !Ref BitacoraInstanceProfile
-      SecurityGroups:
-        - !Ref BitacoraSecurityGroup
-      BlockDeviceMappings:
-        - DeviceName: /dev/xvda
-          Ebs:
-            VolumeSize: 20
-            VolumeType: gp3
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash
-          # Bootstrap: instalar Git, Docker, Docker Compose
-          yum update -y
-          yum install -y git curl
-
-          # Instalar Docker
-          amazon-linux-extras install docker -y
-          systemctl start docker
-          systemctl enable docker
-          usermod -aG docker ec2-user
-
-          # Instalar Docker Compose v2
-          mkdir -p /usr/local/lib/docker/cli-plugins
-          curl -SL https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-x86_64 \
-            -o /usr/local/lib/docker/cli-plugins/docker-compose
-          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
-          # Instalar AWS CLI v2
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-          unzip /tmp/awscliv2.zip -d /tmp
-          /tmp/aws/install
-
-          # Crear directorio de la app
-          mkdir -p /opt/bitacora
-          echo "Bootstrap completado: $(date)" > /opt/bitacora/bootstrap.log
-
-          # Configurar S3 bucket en entorno
-          echo "S3_BUCKET=${BitacoraLogsBucket}" >> /opt/bitacora/.env
-          echo "AWS_REGION=${AWS::Region}" >> /opt/bitacora/.env
-
-      Tags:
-        - Key: Name
-          Value: bitacora-ec2
-        - Key: Project
-          Value: BitacoraEventos
-
-# ─── Outputs ──────────────────────────────────────────────────────────────────
 Outputs:
-  EC2PublicIP:
-    Description: IP pública de la instancia EC2
-    Value: !GetAtt BitacoraEC2Instance.PublicIp
-    Export:
-      Name: BitacoraEC2PublicIP
 
-  EC2PublicDNS:
-    Description: DNS público de la instancia EC2
-    Value: !GetAtt BitacoraEC2Instance.PublicDnsName
+  URLAplicacion:
+    Description: URL del sistema de Bitacora
+    Value: !Sub 'http://${BitacoraEIP}:5173'
 
-  FrontendURL:
-    Description: URL de acceso al frontend
-    Value: !Sub "http://${BitacoraEC2Instance.PublicIp}:80"
+  IPPublica:
+    Description: IP publica de la instancia EC2
+    Value: !Ref BitacoraEIP
 
-  APIEndpoint:
-    Description: URL de la API backend
-    Value: !Sub "http://${BitacoraEC2Instance.PublicIp}:3001"
+  SSHConexion:
+    Description: Comando para conectarse por SSH
+    Value: !Sub 'ssh -i tu-key.pem ec2-user@${BitacoraEIP}'
 
-  S3BucketName:
-    Description: Nombre del bucket S3 para logs
+  NombreBucketS3:
+    Description: Bucket S3 para logs
     Value: !Ref BitacoraLogsBucket
-    Export:
-      Name: BitacoraLogsBucketName
 
-  SSHCommand:
-    Description: Comando SSH para conectarse
-    Value: !Sub "ssh -i ${KeyPairName}.pem ec2-user@${BitacoraEC2Instance.PublicIp}"
+  IDInstanciaEC2:
+    Description: ID de la instancia EC2
+    Value: !Ref BitacoraEC2
